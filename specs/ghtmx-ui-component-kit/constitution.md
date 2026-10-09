@@ -20,7 +20,7 @@ Primary audience for the MVP: **Go teams already building with ghtmx** who want 
 `ghtmx-ui` is an open source component kit for ghtmx applications, delivered in two tiers:
 
 - **Primitives** — an importable Go module of accessible, themeable, htmx-free components (buttons, alerts, form fields, error summaries, live regions, the dialog host). Because they carry no `hx-*` attribute, they are valid under every htmx version the engine supports.
-- **Recipes** — parameterised source templates for interactive htmx patterns (data table, active search, combobox, modal form, validated form, inline edit, tabs, load-more, login form, page shell). A CLI instantiates a recipe **into the application's own source tree**, bound to the application's own handler symbols and rendered for its pinned htmx version, so the engine checks every binding exactly as it checks hand-written templates.
+- **Recipes** — parameterised source templates for interactive htmx patterns (data table, active search, combobox, modal form, validated form, inline edit, tabs, load-more, login form, page shell). A CLI instantiates a recipe **into the application's own source tree**, bound to the application's own routes through its generated route package and rendered for its pinned htmx version, so the engine checks every binding exactly as it checks hand-written templates.
 
 Alongside both tiers ship one small behaviour module (`kit.js`) for the interactions HTML cannot express on its own — focus management, combobox and tab keyboard handling, toast rendering — and one stylesheet built on CSS custom properties.
 

@@ -207,7 +207,7 @@ Recipes MUST declare dependencies on other recipes and compose through instance 
 
 Acceptance criteria:
 
-- `modal-form`, `data-table` row actions, and `login-form` require the `shell` instance; adding them without it reports the missing dependency and the command to add it.
+- Every recipe other than `shell` requires the `shell` instance, which provides the dialog host, toast region, announcer, CSRF header wiring, and (under `htmx2`) the `422` swap rule that FR-026 relies on; adding a recipe without it reports the missing dependency and the command to add it.
 - `data-table --edit-with <ModalFormInstance>` wires row edit buttons to an existing `modal-form` instance.
 
 #### FR-018 — Engine-clean instances

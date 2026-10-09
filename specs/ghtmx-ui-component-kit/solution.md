@@ -561,7 +561,7 @@ erDiagram
 | `INSTANCE_FILE` | Relative path and SHA-256 of its base copy; the working file may diverge freely. |
 | `BASE_COPY` | Pristine rendering under `.ghtmx-ui/base/<path>`; the merge ancestor. |
 | `PIN_VARIANT` | `htmx2` or `htmx4` source tree for a recipe version. |
-| `HANDLER_BINDING` | Slot name, handler symbol, binding form (symbol or constructor), verb. |
+| `HANDLER_BINDING` | Slot name, handler symbol, binding form (`<Route>Path` constant or typed constructor), verb. |
 | `ROUTE` | Entry from `ghtmx routes -json`; never persisted by the kit. |
 | `ASSUMED_ROUTE` | `VERB /path` declared with `--assume` for a handler not yet written. |
 | `EVENT_DECL` | Per-instance change event (`UsersChanged`), part of the application's event contract. |
@@ -737,7 +737,7 @@ mux.HandleFunc("DELETE /users/{id}", web.DeleteUser)
 | Command | Purpose | Key flags |
 | --- | --- | --- |
 | `ghtmx-ui init` | Config, lockfile, shell instance | `--dir`, `--package`, `--csrf`, `--stub` |
-| `ghtmx-ui add <recipe>` | Instantiate a recipe | `--name`, recipe params, `--params`, `--stub`, `--assume`, `--dry-run` |
+| `ghtmx-ui add <recipe>` | Instantiate a recipe | `--name`, recipe params, `--params`, `--dir`, `--stub`, `--assume`, `--dry-run` |
 | `ghtmx-ui list` | Recipes, or instances with `--instances` | `-json` |
 | `ghtmx-ui diff [<Instance>]` | Local edits vs. base; `--upstream` vs. newer recipe | `-check`, `-json` |
 | `ghtmx-ui update [<Instance>…]` | Three-way update | `--repin`, `--dry-run`, `-json` |

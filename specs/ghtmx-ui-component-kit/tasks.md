@@ -76,7 +76,7 @@ Anything that would exceed 5 days has been split.
   - _Complexity: Medium_
 
 - [ ] 6\. Minimal recipe renderer
-  - Implement `internal/recipe`: load `recipes/<id>/recipe.json` from the embedded catalogue, select the `htmx2/` or `htmx4/` source tree by pin family (D3), and render with `text/template` using `[[ ]]` delimiters (D2) so engine `{ }` syntax passes through untouched; normalise output to `\n` and emit files in sorted path order (P7). Handler parameters bind by symbol only at this stage.
+  - Implement `internal/recipe`: load `recipes/<id>/recipe.json` from the embedded catalogue, select the `htmx2/` or `htmx4/` source tree by pin family (D3), and render with `text/template` using `[[ ]]` delimiters (D2) so engine `{ }` syntax passes through untouched; normalise output to `\n` and emit files in sorted path order (P7). Handler parameters bind through `ghtmxgen.<Route>Path` constants only at this stage.
   - Acceptance Criteria:
     - Rendering identical inputs twice yields byte-identical files.
     - `.ghtmx` braces and `@` calls in recipe sources survive rendering unchanged.
@@ -89,7 +89,7 @@ Anything that would exceed 5 days has been split.
   - Author a minimal `shell` (`@ghtmxgen.HTMXScript()`, asset tags, `<main id="main">` slot, the D6 dialog host, and the `htmx2` `responseHandling` configuration that swaps `422`) and a minimal `validated-form` (one required field, `422` on failure, `hx-status:5xx="swap:none"` in the `htmx4` variant), each in both pin families (D9). Wire `cmd/ghtmx-ui`: `init` writes `ghtmx-ui.json`, an empty lockfile, and the shell instance; `add validated-form --name <Instance>` writes instance files directly (staging arrives in task 24).
   - Acceptance Criteria:
     - On an empty ghtmx project, `init`, `add`, `ghtmx generate`, and `go build` succeed under pins `2.0.10` and `4.0.0` with zero engine errors.
-    - The rendered `hx-post` is a handler symbol; no string URL appears at any binding site.
+    - The rendered `hx-post` binds the route's `ghtmxgen.<Route>Path` constant; no string URL or bare handler symbol appears at any binding site.
     - `ghtmx-ui.json` records instance directory, package name, default stub router, and kit version.
   - _Dependencies: 5, 6_
   - _Requirements: FR-020, FR-026, FR-070, FR-071, DATA-002_
@@ -290,7 +290,7 @@ Anything that would exceed 5 days has been split.
   - _Complexity: Large_
 
 - [ ] 26\. Recipe composition and complete `init` / `add`
-  - Resolve declared recipe dependencies (`modal-form`, `data-table` row actions, and `login-form` require the `shell` instance) and composition by instance name (`data-table --edit-with <ModalFormInstance>`); complete `add` over tasks 21–25 with `--dry-run` and a summary of files written, registration lines, and the next command (`ghtmx generate`); complete `init` with the engine range check and a refusal to run twice.
+  - Resolve declared recipe dependencies (every recipe other than `shell` requires the `shell` instance) and composition by instance name (`data-table --edit-with <ModalFormInstance>`); complete `add` over tasks 21–25 with `--dry-run` and a summary of files written, registration lines, and the next command (`ghtmx generate`); complete `init` with the engine range check and a refusal to run twice.
   - Acceptance Criteria:
     - Adding a shell-dependent recipe without a shell instance reports the missing dependency and the command that adds it.
     - A second `init` is refused with a pointer to `doctor`; an out-of-range engine exits `3`.
