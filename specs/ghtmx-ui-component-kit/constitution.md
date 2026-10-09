@@ -95,7 +95,7 @@ The importable module depends on the Go standard library and the ghtmx runtime o
 ### Required
 
 - **Go** — the two most recent Go releases, matching the engine's CI matrix.
-- **ghtmx engine** — a declared minimum release that ships the `auth` package and htmx 4 support; the supported range is recorded in `go.mod` and checked by `ghtmx-ui doctor`.
+- **ghtmx engine** — upstream `github.com/go-monolith/ghtmx` **v0.1.23 or later**: the first release with both the `auth` package (added in v0.1.20) and htmx 4 support (added in v0.1.23). This spec was verified against v0.2.1. The supported range is recorded in `go.mod` and checked by `ghtmx-ui doctor`.
 - **htmx** — every pin the engine supports (`2.0.0`–`2.0.10`, `4.0.0`). Recipes target two **pin families**: `htmx2` (constructs available since 2.0.0) and `htmx4`.
 - **Templates** — `.ghtmx` source compiled by `ghtmx generate`; generated `_ghtmx.go` files committed, matching engine convention.
 - **Browser behaviour** — one hand-written ES module, no build step, no transpilation.
@@ -220,7 +220,22 @@ Kit assets are served by the application with Subresource Integrity hashes and t
 
 ### ghtmx engine
 
-Template language, `ghtmx generate`, `ghtmx generate -check`, `ghtmx routes -json`, the stable diagnostic catalogue, the runtime (`ghtmx.Component`, `ghtmx.CSRFHeader`, nonce context), the `nethttp` adapter (`Render`, `WithPage`, `Status`, `Retarget`, `Reswap`), and the `auth` package.
+The kit targets the **shipped upstream API** of `github.com/go-monolith/ghtmx` at v0.1.23 or later, not the pre-implementation design in the `go-htmx-template-engine` sample. Upstream renamed some surfaces while implementing that design and added others the design never specified. Every engine name in this bundle is the upstream name:
+
+| Kit uses (upstream ghtmx ≥ v0.1.23) | `go-htmx-template-engine` sample | Relationship |
+| --- | --- | --- |
+| `ghtmxgen.HTMXScript()` (per-pin helper in the central generated package) | `Script(opts ...ScriptOption) Component` (FR-091) | Renamed upstream |
+| `ghtmx.CSRFHeader(token)` | `WithCSRF(token string) AttributeOption` (FR-092) | Renamed upstream |
+| `ghtmx generate -check` | `ghtmx generate --check` | Same mode; upstream documents the single-dash flag |
+| `ghtmx fmt -fail` | `ghtmx fmt --check` (FR-062) | Renamed upstream |
+| `ghtmx routes -json` | machine-readable `routes` output (FR-064) | Named upstream |
+| `ghtmx.json` | project configuration file (FR-070, FR-071) | Named upstream |
+| `ghtmxgen.<Route>Path` constants and typed constructors as bindings | typed route constructors (FR-021) | Upstream adds `Path` constants as bindings for routes without parameters |
+| `nethttp.Render`, `WithPage`, `Status`, `PushURL`, `Retarget`, `Reswap` | adapter mode selection and header helpers (FR-035, FR-036) | Named upstream |
+| `GHTMX-E0601`/`E0602`/`E0603` and the other codes listed in INT-001 | diagnostic families `E01xx`–`W03xx` | Individual codes are upstream only |
+| `auth` package (`Middleware`, `CSRF`, `CSRFTokenFrom`, `SetLoginCSRFCookie`, `ValidLoginCSRF`, `NewSessionToken`, `SetSessionCookie`) | not specified | Upstream only (v0.1.20+) |
+
+Beyond the names above, the kit uses the template language, the stable diagnostic catalogue, and the runtime (`ghtmx.Component`, nonce context).
 
 ### htmx
 

@@ -86,7 +86,7 @@ Anything that would exceed 5 days has been split.
   - _Complexity: Medium_
 
 - [ ] 7\. Seed recipes and minimal `init` / `add`
-  - Author a minimal `shell` (`@ghtmxgen.HTMXScript()`, asset tags, `<main id="main">` slot, the D6 dialog host, and the `htmx2` `responseHandling` configuration that swaps `422`) and a minimal `validated-form` (one required field, `422` on failure, `hx-status:5xx="swap:none"` in the `htmx4` variant), each in both pin families (D9). Wire `cmd/ghtmx-ui`: `init` writes `ghtmx-ui.json`, an empty lockfile, and the shell instance; `add validated-form --name <Instance>` writes instance files directly (staging arrives in task 24).
+  - Author a minimal `shell` (`@ghtmxgen.HTMXScript()`, asset tags, `<main id="main">` slot, the D6 dialog host, and the `htmx2` `htmx-config` meta restating the full `responseHandling` list with a `422` swap rule before the `[45]..` error rule, since setting the option replaces the default) and a minimal `validated-form` (one required field, `422` on failure; in the `htmx4` variant the form carries `hx-status:422`, `hx-status:4xx="swap:none"`, and `hx-status:5xx="swap:none"`), each in both pin families (D9). Wire `cmd/ghtmx-ui`: `init` writes `ghtmx-ui.json`, an empty lockfile, and the shell instance; `add validated-form --name <Instance>` writes instance files directly (staging arrives in task 24).
   - Acceptance Criteria:
     - On an empty ghtmx project, `init`, `add`, `ghtmx generate`, and `go build` succeed under pins `2.0.10` and `4.0.0` with zero engine errors.
     - The rendered `hx-post` binds the route's `ghtmxgen.<Route>Path` constant; no string URL or bare handler symbol appears at any binding site.
@@ -183,9 +183,9 @@ Anything that would exceed 5 days has been split.
   - _Complexity: Large_
 
 - [ ] 16\. Busy state and request-failure feedback
-  - Set `aria-busy` on the requesting container and disable its submit controls for the request's duration (D10); `ui.Indicator` visibility keys off `[aria-busy]`, never htmx classes. On a `5xx` or network failure, raise a generic error toast and re-enable controls; leave redirects to htmx so the `auth` middleware's login redirect is never rewritten. Extend `internal/gates` to reject `eval`, `new Function`, `innerHTML`, and inline handlers in `kit.js`, and to cap it at 400 lines.
+  - Set `aria-busy` on the requesting container and disable its submit controls for the request's duration (D10); `ui.Indicator` visibility keys off `[aria-busy]`, never htmx classes. On an unswapped error response (a `4xx` other than `422`, or a `5xx`) or a network failure, raise a generic error toast and re-enable controls; leave redirects to htmx so the `auth` middleware's login redirect is never rewritten. Extend `internal/gates` to reject `eval`, `new Function`, `innerHTML`, and inline handlers in `kit.js`, and to cap it at 400 lines.
   - Acceptance Criteria:
-    - Browser tests over recipe-shaped fixture markup inject `500` responses and dropped connections and assert no error body is swapped, an error toast appears, and controls re-enable.
+    - Browser tests over recipe-shaped fixture markup inject `403` and `500` responses and dropped connections and assert no error body is swapped, an error toast appears, and controls re-enable.
     - A forbidden construct in `kit.js`, or a 401st line, fails the gate.
   - _Dependencies: 15_
   - _Requirements: FR-039, FR-085, NFR-003_
@@ -316,7 +316,7 @@ Anything that would exceed 5 days has been split.
   - Generate the typed values struct and a `Parse<Instance>` function returning it with `uikit.FormErrors` for the declared fields; render `ErrorSummary` and field errors on `422`; expose the success mode as a parameter (confirmation fragment, or the engine's typed redirect helpers); disable submit controls and show `ui.Indicator` while in flight.
   - Acceptance Criteria:
     - Under both pins, an invalid submission is swapped with status `422` and focus lands on the error summary.
-    - A `500` response never replaces the form (`htmx2` by default, `htmx4` through `hx-status:5xx="swap:none"`).
+    - A `403` or `500` response never replaces the form (`htmx2` through the shell's `responseHandling` list, `htmx4` through the form's `hx-status:4xx` and `hx-status:5xx` no-swap rules, with the exact `hx-status:422` rule still winning for validation failures).
     - Generated parse functions enforce required, max-length, email, and enumerated-option constraints.
   - _Dependencies: 16, 19, 27_
   - _Requirements: FR-026, FR-039, FR-042_
@@ -349,6 +349,7 @@ Anything that would exceed 5 days has been split.
     - A full-page load of any pushed URL renders the identical state.
     - A delayed earlier response never overwrites a later one.
     - With JavaScript disabled, every control works through the same GET form and handler.
+    - Pressing Enter in the filter field submits through the Apply button (the form's default button), with and without JavaScript: the current sort is unchanged and the page resets to 1.
   - _Dependencies: 30_
   - _Requirements: FR-021, FR-041, FR-084, NFR-009_
   - _Modules: M5, M6_
@@ -508,7 +509,7 @@ Anything that would exceed 5 days has been split.
   - _Complexity: Large_
 
 - [ ] 46\. Strict-CSP suite
-  - Serve every fixture with `default-src 'self'; script-src 'self' 'nonce-…'; style-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'` (plus the htmx origin when loaded from a CDN) and a per-request nonce set through `ghtmx.WithNonce`; record every `securitypolicyviolation` event across each recipe's flows, then repeat with htmx's `allowEval` disabled.
+  - Serve every fixture with `default-src 'self'; script-src 'self' 'nonce-…'; style-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'` (plus the htmx origin when loaded from a CDN) and a per-request nonce set through `ghtmx.WithNonce`; record every `securitypolicyviolation` event across each recipe's flows, then repeat with `htmx.config.allowEval` set to `false` for the `htmx2` pins (htmx 4.0.0 has no such option, so its guarantee is the policy's lack of `'unsafe-eval'`).
   - Acceptance Criteria:
     - Any violation fails CI with its directive and source.
     - Both runs pass for every recipe under both pin families, including the shell's htmx configuration and toast rendering.
@@ -518,10 +519,11 @@ Anything that would exceed 5 days has been split.
   - _Complexity: Medium_
 
 - [ ] 47\. No-JavaScript and resilience suites
-  - Run the functional flows of `data-table`, `active-search`, `tabs`, `load-more`, and `login-form` with JavaScript disabled; add resilience scenarios for every recipe: delayed earlier responses, injected `5xx` responses and dropped connections, and an expired session behind the engine's `auth` middleware.
+  - Run the functional flows of `data-table`, `active-search`, `tabs`, `load-more`, and `login-form` with JavaScript disabled; add resilience scenarios for every recipe: delayed earlier responses, injected `403` and `500` responses from every recipe endpoint (covering non-form requesters: filter and search inputs, combobox, tabs, inline edit, load-more), dropped connections, and an expired session behind the engine's `auth` middleware.
   - Acceptance Criteria:
     - Every navigation-shaped flow completes through full-page responses with JavaScript disabled.
-    - No stale response overwrites a newer one; no error body is swapped; an error toast appears and controls re-enable.
+    - No stale response overwrites a newer one; no error body is swapped under any pin; an error toast appears and controls re-enable.
+    - A static check over the fixture matrix output confirms that every element carrying a verb attribute in an `htmx4` instance also carries `hx-status:4xx="swap:none"` and `hx-status:5xx="swap:none"`.
     - An htmx request after session expiry navigates the browser to the login page under both pins.
   - _Dependencies: 44_
   - _Requirements: FR-039, FR-084, FR-085, NFR-009_

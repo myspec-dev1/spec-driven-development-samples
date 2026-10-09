@@ -11,7 +11,7 @@ The kit is shaped by one engine rule. Under ghtmx's first carve-out, the five ve
 
 ### Scope of this document
 
-This document specifies **what** the kit must do. Delivery structure, module layout, and tooling choices are fixed by the project constitution and elaborated in the solution design. The ghtmx engine is an external dependency; its behaviour is referenced, never re-specified.
+This document specifies **what** the kit must do. Delivery structure, module layout, and tooling choices are fixed by the project constitution and elaborated in the solution design. The ghtmx engine is an external dependency; its behaviour is referenced, never re-specified. Engine names are those of the shipped upstream `github.com/go-monolith/ghtmx` API (v0.1.23 or later). Where they differ from the `go-htmx-template-engine` design sample, the constitution's Integration Points section maps one to the other.
 
 ### In scope for the MVP
 
@@ -230,7 +230,8 @@ Acceptance criteria:
 - The shell renders `lang`, viewport meta, a skip link to `#main`, `@ghtmxgen.HTMXScript()`, `@ui.Stylesheet()`, `@ui.BehaviourScript()`, a `<main id="main">` children slot, `@ui.ToastRegion()`, `@ui.Announcer()`, and a dialog host (`<dialog id="kit-dialog">` containing `#kit-dialog-content`).
 - The dialog host markup lives in the shell instance — inside the application's compiled set — so that recipe `hx-target="#kit-dialog-content"` selectors match a static id and raise no `GHTMX-W0201`.
 - With `--csrf`, the shell places `ghtmx.CSRFHeader(token)` on `<body>` as `hx-headers` under `htmx2` and `hx-headers:inherited` under `htmx4`, reading the token with `auth.CSRFTokenFrom`.
-- The `htmx2` variant configures htmx so that `422` responses are swapped and htmx injects no inline styles. The `htmx4` variant needs no configuration for `422`, because htmx 4 swaps every status by default.
+- The `htmx2` variant configures htmx through its `htmx-config` meta tag so that `422` responses are swapped and htmx injects no inline styles. Setting `responseHandling` replaces htmx 2's default list, so the shell restates the whole list with the `422` rule placed before the generic error rule: `[{"code":"204","swap":false},{"code":"[23]..","swap":true},{"code":"422","swap":true},{"code":"[45]..","swap":false,"error":true}]`.
+- The `htmx4` variant needs no configuration for `422`: htmx 4 swaps every status except `204` and `304` by default. Its error handling is per element instead (FR-039).
 
 #### FR-021 — Data table: state and navigation
 
@@ -241,6 +242,7 @@ Acceptance criteria:
 - Sortable column headers expose `aria-sort`; activating one sorts ascending, then descending; changing sort or filter resets to page 1.
 - Pagination offers previous, next, and numbered pages, with `aria-current="page"` on the current page, and a page-size selector bounded by the instance's allowed sizes.
 - The filter input issues a request 300 ms after the last keystroke and cancels any in-flight table request.
+- An explicit Apply control follows the filter field and precedes every other submit button in the form, making it the form's default button. Pressing Enter in the filter field therefore submits through it, resetting to page 1 and keeping the current sort, with or without JavaScript. Without it, implicit submission would go through the first sort header and flip the sort.
 - htmx requests swap only the table body fragment and push the canonical URL; a full-page load of that URL renders the identical state.
 - With JavaScript disabled, every control works through the same GET form and handler, producing full-page responses (NFR-009).
 - Each update announces "Showing X–Y of Z, sorted by C ascending|descending" through the announcer.
@@ -296,7 +298,7 @@ The `validated-form` recipe MUST render a standalone form with server-side valid
 Acceptance criteria:
 
 - Validation failure responds `422 Unprocessable Content` with the re-rendered form; the error summary receives focus.
-- Under `htmx2`, the response is swapped because the shell configures 422 swapping (FR-020); under `htmx4`, it is swapped by default and the form carries `hx-status:5xx="swap:none"` so server error pages never replace the form.
+- Under `htmx2`, the response is swapped because the shell's `responseHandling` list includes a `422` swap rule (FR-020). Under `htmx4`, the form carries an exact `hx-status:422` swap rule, which htmx 4 matches before the `4xx` no-swap rule required by FR-039.
 - Success either re-renders a confirmation fragment or redirects through the engine's typed redirect helpers, as chosen by a recipe parameter.
 - Submit controls are disabled while the request is in flight, and a visible `ui.Indicator` shows progress.
 
@@ -385,12 +387,15 @@ Acceptance criteria:
 
 #### FR-039 — Request-failure feedback
 
-Recipes MUST handle server errors and network failures without corrupting the page.
+Recipes MUST handle error responses and network failures without corrupting the page.
 
 Acceptance criteria:
 
-- A `5xx` response or network failure never swaps an error page into recipe content.
+- A `5xx` response, a `4xx` response other than a recipe's deliberate `422` (for example the `auth` CSRF layer's `403`, or a `404` for a deleted row), or a network failure never swaps an error body into recipe content. This applies whatever element issued the request: forms, filter and search inputs, combobox inputs, tab links, inline-edit buttons, and load-more buttons.
+- Under `htmx2`, the shell's `responseHandling` list (FR-020) leaves these statuses unswapped and flags them as errors.
+- Under `htmx4`, which swaps every status except `204` and `304`, **every** element in a recipe that carries a verb attribute also carries `hx-status:4xx="swap:none"` and `hx-status:5xx="swap:none"`. An element that expects a validation re-render adds an exact `hx-status:422` rule, which htmx 4 matches before the `42x` and `4xx` wildcards.
 - The behaviour module raises a generic error toast and re-enables the controls that were disabled for the request.
+- The fixture matrix returns `403` and `500` from every recipe endpoint under each pin and asserts the content is unchanged.
 
 ### Go Helpers (`uikit`)
 
@@ -668,7 +673,7 @@ Every interaction MUST be operable by keyboard alone, with a visible focus indic
 The kit MUST produce zero CSP violations under: `default-src 'self'; script-src 'self' 'nonce-…'; style-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'` (with the htmx origin added when the application loads htmx from a CDN).
 
 - Verified by a browser suite that fails on any `securitypolicyviolation` event.
-- Kit behaviour MUST also hold with htmx's `allowEval` disabled.
+- Under `htmx2`, kit behaviour MUST also hold with `htmx.config.allowEval` set to `false`. htmx 4.0.0 has no `allowEval` option, so under `htmx4` the guarantee is the policy itself: no `'unsafe-eval'`, enforced by the same suite for both families.
 
 ### NFR-004 — Asset size budgets
 
@@ -762,8 +767,19 @@ The kit handles no personal data itself. The `login-form` recipe renders credent
 ### INT-001 — ghtmx engine toolchain
 
 - The CLI invokes `ghtmx routes -json` for binding inference and verification, and relies on `ghtmx generate`, `generate -check`, and `fmt -fail` for verdicts (FR-012, FR-076, NFR-005).
-- The supported engine release range is declared once and enforced by `init` and `doctor`.
-- The kit consumes engine diagnostic IDs (`GHTMX-E0101`, `GHTMX-W0104`, `GHTMX-W0201`, `GHTMX-W0202`) only as documented in the engine's diagnostic catalogue.
+- The supported engine release range — upstream `github.com/go-monolith/ghtmx` v0.1.23 or later — is declared once and enforced by `init` and `doctor`.
+- The kit depends on the following engine diagnostics, and only as documented in the engine's diagnostic catalogue. This table is the single list; other sections cite codes from it.
+
+| Code | Why the kit depends on it |
+| --- | --- |
+| `GHTMX-E0101` | A binding names a route that does not exist; how an unwritten handler or a renamed one surfaces (FR-082, D12) |
+| `GHTMX-E0301`, `GHTMX-E0305`, `GHTMX-E0307` | Fragment, event, and template name collisions that instance namespacing must avoid (FR-014) |
+| `GHTMX-E0402` | An unresolvable route registration, surfaced verbatim by the engine bridge |
+| `GHTMX-E0601`, `GHTMX-E0602`, `GHTMX-E0603` | The carve-out rules that make importable htmx components uncheckable (D1) |
+| `GHTMX-W0102` | A declared event with no template listener; suppressed only in the kit module's own build (M3) |
+| `GHTMX-W0104` | A route never bound from a template; the only warning a recipe manifest may list as expected (FR-018) |
+| `GHTMX-W0201` | A constant `hx-target` matching no static id; why the dialog host lives in the shell instance (FR-020, D6) |
+| `GHTMX-W0202` | An htmx 4 inheritable attribute without `:inherited`; why the shell's CSRF header uses `hx-headers:inherited` (FR-020) |
 
 ### INT-002 — ghtmx runtime and adapters
 

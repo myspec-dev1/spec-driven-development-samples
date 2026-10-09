@@ -18,6 +18,7 @@ Around these sit three supporting pieces: a typed Go helper package (`uikit`) fo
 | Layer | Choice | Rationale |
 | --- | --- | --- |
 | Language | Go, two most recent releases | Matches the engine's CI matrix |
+| Engine | Upstream `github.com/go-monolith/ghtmx` ≥ v0.1.23 (verified against v0.2.1) | First release with both `auth` and htmx 4; names follow upstream, mapped to the `go-htmx-template-engine` sample in the constitution |
 | Templates | `.ghtmx`, compiled by `ghtmx generate`; generated files committed | Engine convention; consumers need no generation step for the module |
 | Recipe rendering | `text/template` with `[[ ]]` delimiters | Stdlib, deterministic, and cannot collide with `.ghtmx`'s `{ }` (D2) |
 | Route information | `ghtmx routes -json` via subprocess | The engine's internals are unimportable by design (D7) |
@@ -473,7 +474,7 @@ func Render(req Request) (Result, []Problem)
 
 **Responsibilities**
 
-- Locate the `ghtmx` binary, run `ghtmx version`, and check it against the supported range.
+- Locate the `ghtmx` binary, run `ghtmx version`, and check it against the supported range (v0.1.23 or later).
 - Run `ghtmx routes -json` and decode the route table (verb, path, handler, origin, recognizer, position).
 - Read `ghtmx.json` for `htmxVersion` and `generatedPackage` (defaults `2.0.10` and `ghtmxgen`).
 
@@ -511,7 +512,7 @@ type Engine interface {
 **Responsibilities**
 
 - Gates inside the main module: import isolation (NFR-012), "no `hx-*` in primitives" (FR-003), asset size budgets (NFR-004), render allocation baseline (NFR-008), gallery coverage (NFR-014).
-- The `verify/` module: generates the fixture matrix (recipe × pin `2.0.0`/`2.0.10`/`4.0.0` × stub router `nethttp`/`chi`), runs the engine and Go toolchain over each fixture (NFR-005, NFR-006), and drives `chromedp` suites — `axe-core` scan, keyboard script, strict-CSP run with `allowEval` disabled, JavaScript-disabled run (NFR-001–NFR-003, NFR-009).
+- The `verify/` module: generates the fixture matrix (recipe × pin `2.0.0`/`2.0.10`/`4.0.0` × stub router `nethttp`/`chi`), runs the engine and Go toolchain over each fixture (NFR-005, NFR-006), and drives `chromedp` suites — `axe-core` scan, keyboard script, strict-CSP run (repeated with `allowEval` off under `htmx2`), a `403`/`500` injection run against every recipe endpoint, JavaScript-disabled run (NFR-001–NFR-003, NFR-009).
 - Cross-platform determinism check: instance hashes from Linux, macOS, and Windows jobs must match (NFR-007).
 - WebAssembly gate: a fixture importing the module plus one instance of every recipe builds for `js/wasm` and `wasip1/wasm` (NFR-011).
 
@@ -646,6 +647,7 @@ templ usersTable(rows []store.User, q uikit.TableQuery, p uikit.PageInfo) {
 				hx-swap="outerHTML"
 				hx-sync="closest form:replace"
 			/>
+			<button type="submit" name="set" value="page:1">Apply filter</button>
 		</div>
 		@usersTableGrid(rows, q, p)
 	</form>
@@ -684,7 +686,7 @@ fragment usersTableGrid(rows []store.User, q uikit.TableQuery, p uikit.PageInfo)
 }
 ```
 
-The pager and the row actions are elided. The pager renders `<button type="submit" name="set" value="page:N">` controls, so pagination works through the same form with or without JavaScript. The `usersCell*` accessors live in the developer-owned `users_table_cells.go`, so cell formatting is plain Go and a wrong field name is a Go compile error. Both `hx-target` selectors name a static id in the same file, so `GHTMX-W0201` stays silent.
+The Apply button is deliberately the first submit button in the form, which makes it the form's default button: pressing Enter in the filter submits through it (keeping the sort, resetting to page 1) rather than through the first sort header. The pager and the row actions are elided. The pager renders `<button type="submit" name="set" value="page:N">` controls, so pagination works through the same form with or without JavaScript. The `usersCell*` accessors live in the developer-owned `users_table_cells.go`, so cell formatting is plain Go and a wrong field name is a Go compile error. Both `hx-target` selectors name a static id in the same file, so `GHTMX-W0201` stays silent. The `htmx4` variant differs only in the attributes listed in the pin-family table below: both requesting elements (the form and the filter input) also carry `hx-status:4xx="swap:none"` and `hx-status:5xx="swap:none"`.
 
 ### Handler stub contract (`--stub nethttp`)
 
@@ -726,11 +728,11 @@ mux.HandleFunc("DELETE /users/{id}", web.DeleteUser)
 | Concern | `htmx2` variant | `htmx4` variant |
 | --- | --- | --- |
 | CSRF header on `<body>` | `hx-headers={ ghtmx.CSRFHeader(token) }` | `hx-headers:inherited={ ghtmx.CSRFHeader(token) }` |
-| Swapping `422` | Shell `htmx-config` meta adds a `422` swap rule to `responseHandling` | Default: htmx 4 swaps every status |
-| Server errors | Not swapped by default; `kit.js` raises the error toast | `hx-status:5xx="swap:none"` on the requesting form; `kit.js` raises the error toast |
+| Swapping `422` | Shell `htmx-config` meta restates the whole `responseHandling` list, because setting it replaces the default: `[{"code":"204","swap":false},{"code":"[23]..","swap":true},{"code":"422","swap":true},{"code":"[45]..","swap":false,"error":true}]` | Exact `hx-status:422` rule on the requesting element (htmx 4 matches the exact code before `42x`/`4xx`) |
+| Error responses (`4xx` other than `422`, `5xx`) | Not swapped: the `[45]..` rule marks them as errors; `kit.js` raises the error toast | htmx 4 swaps every status except `204`/`304`, so **every** requesting element (forms, inputs, buttons, links) carries `hx-status:4xx="swap:none"` and `hx-status:5xx="swap:none"`; `kit.js` raises the error toast |
 | Disabling controls in flight | `hx-disabled-elt` | `hx-disable` |
 | Inline style injection | Shell config turns off htmx's injected indicator styles | Shell applies whatever the pinned build requires; the CSP suite proves zero inline styles |
-| Inheritance | Not relied upon: every requesting element carries its own attributes | Same; no `GHTMX-W0202` is ever raised |
+| Inheritance | Relied upon only for the shell's CSRF header on `<body>`; every other attribute sits on the requesting element | Same, with the CSRF header written `hx-headers:inherited` as htmx 4 requires, so no `GHTMX-W0202` is raised |
 
 ### CLI command surface
 
@@ -787,7 +789,7 @@ The kit has no identity model. The shell wires the engine's CSRF header and the 
 
 - All dynamic markup passes through engine interpolation and its context-aware escaping.
 - `kit.js` uses `textContent`, `setAttribute` on an allow-list (`aria-*`, `tabindex`, `hidden`), and `<template>` cloning of server-rendered markup only; it never assigns `innerHTML` from event payloads.
-- Kit markup contains no inline scripts, inline handlers, `style` attributes, `hx-on:*`, `js:` values, or trigger filters, so it runs under the NFR-003 policy with htmx `allowEval` disabled.
+- Kit markup contains no inline scripts, inline handlers, `style` attributes, `hx-on:*`, `js:` values, or trigger filters, so it runs under the NFR-003 policy without `'unsafe-eval'` under both pin families, and with `allowEval` set to `false` under `htmx2` (htmx 4.0.0 has no such option).
 
 ### Supply Chain
 
@@ -855,7 +857,8 @@ The kit runs no service and sends no telemetry. Its observable surfaces are:
 | Engine-clean | `verify/` matrix | Recipe × pin (`2.0.0`, `2.0.10`, `4.0.0`) × router | Any engine error, unlisted warning, or toolchain failure |
 | Accessibility | `chromedp` + `axe-core` | Every gallery page and fixture screen, both schemes | Any serious or critical violation |
 | Keyboard | `chromedp` scripts | Every key binding in FR-024/025/027/028 | Any deviation |
-| CSP | `chromedp` with NFR-003 headers, `allowEval` off | Every recipe × pin | Any `securitypolicyviolation` |
+| CSP | `chromedp` with NFR-003 headers; repeated with `allowEval` off under `htmx2` | Every recipe × pin | Any `securitypolicyviolation` |
+| Error responses | `chromedp`, injected `403`/`500` from every recipe endpoint | Every recipe × pin, every requesting element | Any swapped error body |
 | No-JS | `chromedp` with JavaScript disabled | Navigation-shaped recipes | Any functional failure |
 | Budgets | `internal/gates` | Asset sizes, render allocations, CLI latency | Any breach |
 | Platform | CI on Linux, macOS, Windows | CLI tests and determinism hashes | Hash mismatch |
@@ -868,7 +871,7 @@ The kit runs no service and sends no telemetry. Its observable surfaces are:
 | SC-1 | Users admin screen built only with `init`, `add`, handler bodies, and data access | Pass/fail under `2.0.10` and `4.0.0` | MVP success criterion |
 | SC-2 | Accessibility | Zero serious/critical axe violations; manual screen-reader pass recorded | NFR-001 |
 | SC-3 | Keyboard operability | 100% of specified key bindings pass | NFR-002, FR-053 |
-| SC-4 | Strict CSP | Zero violations, `allowEval` disabled | NFR-003 |
+| SC-4 | Strict CSP | Zero violations without `'unsafe-eval'`; also with `allowEval` off under `htmx2` | NFR-003 |
 | SC-5 | Asset budgets | `kit.js` ≤ 6 KB, `kit.css` ≤ 12 KB (gzip, as served) | NFR-004 |
 | SC-6 | Engine-clean instances | 100% of the fixture matrix with zero engine errors | NFR-005, FR-018 |
 | SC-7 | Dual-pin compatibility | All suites green on `2.0.0`, `2.0.10`, `4.0.0` | NFR-006 |
@@ -949,7 +952,7 @@ The kit runs no service and sends no telemetry. Its observable surfaces are:
 
 **Decision.** Validation failures always respond `422`, using family-specific mechanisms to swap them.
 
-**Rationale.** Truthful status codes keep logs, tests, and intermediaries meaningful. htmx 4 swaps every status by default and routes `5xx` away with `hx-status:5xx`; htmx 2 needs one `responseHandling` rule, which the vendored shell owns visibly.
+**Rationale.** Truthful status codes keep logs, tests, and intermediaries meaningful. htmx 4 swaps every status except `204`/`304` by default, so recipes put `hx-status:4xx` and `hx-status:5xx` no-swap rules on every requesting element and an exact `hx-status:422` rule where a re-render is expected. htmx 2 needs one extra `responseHandling` rule, but setting the option replaces the default list, so the vendored shell restates the whole list and owns it visibly.
 
 **Trade-off accepted.** The `htmx2` shell carries a global `422` rule that applies to the whole application, documented in the shell's header comment.
 
